@@ -9,6 +9,8 @@ Author: Araki
 #include <stdlib.h>
 #include <Windows.h>
 #include <Shlobj.h>
+#include <tchar.h>
+#include <TlHelp32.h>
 
 
 void home_directory(char input[]);
@@ -18,10 +20,15 @@ void Read_file(char file[]);
 void List_files(char directory_path[]);
 char *currentusername();
 
+// Get Running Processes
+BOOL GetProcessList();
+void printError(TCHAR const* msg);
+
+
 int main(void){
 
     // all the builtin function
-    char *functions[] = {"exit", "echo", "type", "cd", "pwd", "sysinfo", "clear", "cls", "cat", "ls", "history", "hist", "whoami", "id"};
+    char *functions[] = {"exit", "echo", "type", "cd", "pwd", "sysinfo", "clear", "cls", "cat", "ls", "history", "hist", "whoami", "id", "ps"};
 
     // Implement dynamic memory for history list
     int capacity = 2;
@@ -147,11 +154,17 @@ int main(void){
         }
 
         // Prints the curent user that is using the shell
-        if (strcmp(input, "whoami") || strcmp(input, "id")) {
+        if (!strcmp(input, "whoami") || !strcmp(input, "id")) {
             char* username = getenv("USERNAME");
             printf("%s\n", username);
             continue;
         }
+
+        if (!strcmp(input, "ps")) {
+            GetProcessList();
+            continue;
+        }
+
 
         // If command is not found in shell
         printf("%s: command not found\n", input);
@@ -159,10 +172,6 @@ int main(void){
     
     return 0;
 }
-
-
-
-
 
 
 
@@ -322,4 +331,73 @@ void List_files(char directory_path[]) {
 
     // Close the search handle
     FindClose(hFind);
+}
+
+
+// Function to Get Running Process
+BOOL GetProcessList() {
+    HANDLE hProcessSnap;
+    HANDLE hProcess;
+    PROCESSENTRY32 pe32;
+    DWORD dwPriorityClass;
+
+    // Take a snapshot of all processes in the system.
+    hProcessSnap = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS, 0 );
+    if( hProcessSnap == INVALID_HANDLE_VALUE ) {
+        printError( TEXT("CreateToolhelp32Snapshot (of processes)") );
+        return( FALSE );
+    }
+
+    // Set the size of the structure before using it.
+    pe32.dwSize = sizeof( PROCESSENTRY32 );
+
+    // Retrieve information about the first process,
+    // and exit if unsuccessful
+    if( !Process32First( hProcessSnap, &pe32 ) ) {
+        printError( TEXT("Process32First") ); // show cause of failure
+        CloseHandle( hProcessSnap );          // clean the snapshot object
+        return( FALSE );
+    }
+
+    // Now walk the snapshot of processes
+    _tprintf("Running Processes:");
+    _tprintf( TEXT("\n=====================================================\n" ));
+    int counter = 0;
+    do {
+        if (counter < 4) {
+            counter++;
+            continue;
+        }
+        _tprintf( TEXT("    %i: %s\n"), counter-3, pe32.szExeFile );
+        counter++;
+    } while( Process32Next( hProcessSnap, &pe32 ) );
+
+    CloseHandle( hProcessSnap );
+    return( TRUE );
+}
+
+
+void printError(TCHAR const* msg){
+    DWORD eNum;
+    TCHAR sysMsg[256];
+    TCHAR* p;
+
+    eNum = GetLastError( );
+    FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            NULL, eNum,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
+            sysMsg, 256, NULL );
+
+    // Trim the end of the line and terminate it with a null
+    p = sysMsg;
+    while ( (*p > 31) || (*p == 9) ) {
+        ++p;
+    }
+
+    do {
+        *p-- = 0;
+    } while ( (p >= sysMsg) && ( (*p == '.') || (*p < 33) ) );
+
+    // Display the message
+    _tprintf( TEXT("\n  WARNING: %s failed with error %d (%s)"), msg, eNum, sysMsg );
 }
